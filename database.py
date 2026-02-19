@@ -17,9 +17,11 @@ def get_db():
 def init_db():
     with get_db() as conn:
 
-        # Applications table
+        # Applications table (force recreate during development)
+        conn.execute("DROP TABLE IF EXISTS applications")
+
         conn.execute('''
-        CREATE TABLE IF NOT EXISTS applications(
+        CREATE TABLE applications(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             application_id TEXT UNIQUE,
             name TEXT,
