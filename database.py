@@ -17,7 +17,7 @@ def get_db():
 def init_db():
     with get_db() as conn:
 
-        # Applications table (force recreate during development)
+        # 1. Applications table (force recreate during development)
         conn.execute("DROP TABLE IF EXISTS applications")
 
         conn.execute('''
@@ -36,7 +36,35 @@ def init_db():
         )
         ''')
 
-        # Agents table
+        # 2. Services table (CRITICAL FIX)
+        conn.execute('''
+        CREATE TABLE IF NOT EXISTS services(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            service_name TEXT UNIQUE,
+            price REAL
+        )
+        ''')
+
+        # Seed default services/prices
+        default_services = [
+            ("PAN Card New", 300),
+            ("PAN Card Correction", 250),
+            ("PAN Aadhaar Linking", 100),
+            ("New Passport Application", 1500),
+            ("Passport Renewal", 1200),
+            ("Income Certificate", 200),
+            ("Caste Certificate", 200),
+            ("Domicile Certificate", 200),
+            ("Driving License New", 800),
+            ("Vehicle RC Transfer", 1000)
+        ]
+        for service in default_services:
+            conn.execute(
+                "INSERT OR IGNORE INTO services (service_name, price) VALUES (?, ?)",
+                service
+            )
+
+        # 3. Agents table
         conn.execute('''
         CREATE TABLE IF NOT EXISTS agents(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,7 +76,7 @@ def init_db():
         )
         ''')
 
-        # Payments table
+        # 4. Payments table
         conn.execute('''
         CREATE TABLE IF NOT EXISTS payments(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,7 +87,7 @@ def init_db():
         )
         ''')
 
-        # Users (admin + agent login)
+        # 5. Users (admin + agent login)
         conn.execute('''
         CREATE TABLE IF NOT EXISTS users(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,7 +98,7 @@ def init_db():
         )
         ''')
 
-        # Audit logs
+        # 6. Audit logs
         conn.execute('''
         CREATE TABLE IF NOT EXISTS audit_logs(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,7 +110,7 @@ def init_db():
         )
         ''')
 
-        # JWT token blocklist
+        # 7. JWT token blocklist
         conn.execute('''
         CREATE TABLE IF NOT EXISTS token_blocklist(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
