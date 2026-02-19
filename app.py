@@ -45,17 +45,17 @@ def create_app():
     def health():
         return {
             "status": "ok",
-            "service": "kaagazseva-backend"
+            "service": "backend"
         }
 
     return app
 
-
 # ---------------- CREATE APP ----------------
 app = create_app()
 
+# ✅ Always initialize database (even on Render)
+init_db()
 
 # ---------------- RUN SERVER (Local Only) ----------------
 if __name__ == "__main__":
-    init_db()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=True)
