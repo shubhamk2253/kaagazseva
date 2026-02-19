@@ -13,3 +13,4 @@ gunicorn==22.0.0
 SQLAlchemy==2.0.29
 Flask-Migrate==4.0.7
 alembic==1.13.1
+setuptools
