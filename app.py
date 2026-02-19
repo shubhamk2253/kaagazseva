@@ -12,7 +12,8 @@ from routes.auth_routes import auth_bp
 from routes.agent_routes import agent_bp
 from routes.admin_routes import admin_bp
 from routes.payment_routes import payment_bp
-from routes.public_roue import public_bp   # FIXED NAME
+from routes.public_roue import public_bp   # keep same name if file is public_roue.py
+
 
 def create_app():
     app = Flask(__name__)
@@ -20,7 +21,7 @@ def create_app():
 
     # ---------------- CONFIG ----------------
     app.config["JWT_SECRET_KEY"] = JWT_SECRET_KEY
-    app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
+    app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10MB upload limit
 
     JWTManager(app)
 
@@ -31,17 +32,30 @@ def create_app():
     app.register_blueprint(payment_bp, url_prefix="/api/payment")
     app.register_blueprint(public_bp, url_prefix="/api")
 
+    # ---------------- HOME ROUTE ----------------
+    @app.route("/")
+    def home():
+        return {
+            "status": "success",
+            "message": "KaagazSeva Backend is Live 🚀"
+        }
+
     # ---------------- HEALTH CHECK ----------------
     @app.route("/health")
     def health():
-        return {"status": "ok", "service": "kaagazseva-backend"}
+        return {
+            "status": "ok",
+            "service": "kaagazseva-backend"
+        }
 
     return app
 
 
-# ---------------- RUN SERVER ----------------
+# ---------------- CREATE APP ----------------
 app = create_app()
 
+
+# ---------------- RUN SERVER (Local Only) ----------------
 if __name__ == "__main__":
     init_db()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=True)
