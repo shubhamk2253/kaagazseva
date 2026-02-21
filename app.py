@@ -16,7 +16,7 @@ from routes.auth_routes import auth_bp
 from routes.agent_routes import agent_bp
 from routes.admin_routes import admin_bp
 from routes.payment_routes import payment_bp
-from routes.public_roue import public_bp   # keep same name if file is public_roue.py
+from routes.public_roue import public_bp  # keep same name if file is public_roue.py
 
 def create_app():
     app = Flask(__name__)
@@ -132,7 +132,7 @@ def create_app():
     @jwt_required()
     def apply_service():
         user_id = get_jwt_identity()
-        # continue with logic
+        # logic for processing the service application goes here
         return jsonify({"message": "Service applied", "user_id": user_id})
 
     return app
@@ -140,9 +140,9 @@ def create_app():
 # ---------------- CREATE APP ----------------
 app = create_app()
 
-# ✅ Always initialize database (even on Render)
+# Initialize database
 init_db()
 
-# ---------------- RUN SERVER (Local Only) ----------------
+# ---------------- RUN SERVER ----------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=True)
