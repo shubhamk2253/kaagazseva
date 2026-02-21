@@ -25,7 +25,32 @@ def profile():
 
     return jsonify(dict(row))
 
+from flask import Blueprint, request, jsonify
+from sqlalchemy import text
+from models import db
 
+agent_bp = Blueprint("agent_bp", __name__)
+
+@agent_bp.route("/api/agent-register", methods=["POST"])
+def agent_register():
+    data = request.json
+
+    db.session.execute(text("""
+        INSERT INTO agent_registrations 
+        (full_name, mobile, email, state_id, district_id, address)
+        VALUES (:name, :mobile, :email, :state, :district, :address)
+    """), {
+        "name": data["full_name"],
+        "mobile": data["mobile"],
+        "email": data["email"],
+        "state": data["state_id"],
+        "district": data["district_id"],
+        "address": data["address"]
+    })
+
+    db.session.commit()
+
+    return jsonify({"message": "Application submitted. Awaiting approval."})
 # ---------------- WORKLOAD ----------------
 @agent_bp.route('/workload')
 @jwt_required()
@@ -101,5 +126,6 @@ def complete_task(app_id):
             WHERE application_id=? AND agent=?
         """, (app_id, agent))
         conn.commit()
+
 
     return jsonify(success=True)
