@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import get_jwt_identity
-from extensions import db
+from models import db
 from sqlalchemy import text
 from utils.security import role_required
 import uuid
@@ -131,3 +131,4 @@ def reject_agent(registration_id):
     """), {"id": registration_id})
     db.session.commit()
     return jsonify({"message": "Agent application rejected"}), 200
+
