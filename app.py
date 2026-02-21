@@ -49,7 +49,11 @@ def create_app():
         }
 
     return app
-
+    @app.route("/db-test")
+    def db_test():
+        from sqlalchemy import text
+        db.session.execute(text("SELECT 1"))
+        return "PostgreSQL Connected"
 # ---------------- CREATE APP ----------------
 app = create_app()
 
@@ -58,4 +62,5 @@ init_db()
 
 # ---------------- RUN SERVER (Local Only) ----------------
 if __name__ == "__main__":
+
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=True)
