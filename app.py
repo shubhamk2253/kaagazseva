@@ -1,154 +1,87 @@
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import JWTManager
 import os
-import random
-from datetime import datetime, timedelta
 from sqlalchemy import text
 
-# Core modules
+# Core internal modules
 from config import JWT_SECRET_KEY
 from database import init_db
 from models import db
 
-# Route blueprints
+# Route blueprints - Ensure the filenames match your directory structure
 from routes.auth_routes import auth_bp
 from routes.agent_routes import agent_bp
 from routes.admin_routes import admin_bp
 from routes.payment_routes import payment_bp
-from routes.public_roue import public_bp  # keep same name if file is public_roue.py
+from routes.public_routes import public_bp  # Fixed naming to match standard
 
 def create_app():
     app = Flask(__name__)
+    
+    # Enable CORS for frontend integration
     CORS(app)
 
-    # ---------------- CONFIG ----------------
-    # 🔥 STEP 2 — Initialize db in app.py
+    # ---------------- CONFIGURATION ----------------
+    # Uses environment variables for security (ensure DATABASE_URL is set in your .env)
     app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["JWT_SECRET_KEY"] = JWT_SECRET_KEY
     app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10MB upload limit
 
-    # IMPORTANT: Bind the SQLAlchemy instance to the app
+    # Initialize extensions
     db.init_app(app)
-    
     JWTManager(app)
 
     # ---------------- REGISTER BLUEPRINTS ----------------
+    # url_prefix ensures routes are organized (e.g., /api/auth/send-otp)
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(agent_bp, url_prefix="/api/agent")
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
     app.register_blueprint(payment_bp, url_prefix="/api/payment")
     app.register_blueprint(public_bp, url_prefix="/api")
 
-    # ---------------- HOME ROUTE ----------------
+    # ---------------- CORE SYSTEM ROUTES ----------------
+
     @app.route("/")
     def home():
         return {
             "status": "success",
-            "message": "KaagazSeva Backend is Live 🚀"
+            "message": "KaagazSeva Backend is Live 🚀",
+            "version": "1.0.0"
         }
 
-    # ---------------- HEALTH CHECK ----------------
     @app.route("/health")
     def health():
-        return {
-            "status": "ok",
-            "service": "backend"
-        }
+        """Used by cloud providers to check if service is running."""
+        try:
+            # Simple query to check DB connectivity
+            db.session.execute(text("SELECT 1"))
+            return {"status": "ok", "database": "connected"}, 200
+        except Exception as e:
+            return {"status": "error", "message": str(e)}, 500
 
-    # ---------------- OTP & SERVICE ROUTES ----------------
+    # ---------------- ERROR HANDLERS ----------------
 
-    @app.route("/api/send-otp", methods=["POST"])
-    def send_otp():
-        data = request.json
-        mobile = data.get("mobile")
+    @app.errorhandler(404)
+    def not_found(e):
+        return jsonify({"error": "Endpoint not found"}), 404
 
-        if not mobile:
-            return jsonify({"error": "Mobile required"}), 400
-
-        otp = str(random.randint(100000, 999999))
-        expires_at = datetime.utcnow() + timedelta(minutes=5)
-
-        db.session.execute(text("""
-            INSERT INTO otp_sessions (mobile, otp_code, expires_at)
-            VALUES (:mobile, :otp, :expires_at)
-        """), {
-            "mobile": mobile,
-            "otp": otp,
-            "expires_at": expires_at
-        })
-
-        db.session.commit()
-        print(f"OTP for {mobile}: {otp}")  # For testing only
-        return jsonify({"message": "OTP sent"})
-
-    @app.route("/api/verify-otp", methods=["POST"])
-    def verify_otp():
-        data = request.json
-        mobile = data.get("mobile")
-        otp = data.get("otp")
-
-        result = db.session.execute(text("""
-            SELECT * FROM otp_sessions
-            WHERE mobile = :mobile
-            AND otp_code = :otp
-            AND is_used = FALSE
-            AND expires_at > NOW()
-            ORDER BY created_at DESC
-            LIMIT 1
-        """), {
-            "mobile": mobile,
-            "otp": otp
-        }).fetchone()
-
-        if not result:
-            return jsonify({"error": "Invalid or expired OTP"}), 400
-
-        db.session.execute(text("""
-            UPDATE otp_sessions
-            SET is_used = TRUE
-            WHERE id = :id
-        """), {"id": result.id})
-
-        user = db.session.execute(text("""
-            SELECT * FROM users WHERE mobile = :mobile
-        """), {"mobile": mobile}).fetchone()
-
-        if not user:
-            db.session.execute(text("""
-                INSERT INTO users (id, mobile, role)
-                VALUES (gen_random_uuid(), :mobile, 'customer')
-            """), {"mobile": mobile})
-            db.session.commit()
-
-            user = db.session.execute(text("""
-                SELECT * FROM users WHERE mobile = :mobile
-            """), {"mobile": mobile}).fetchone()
-
-        access_token = create_access_token(identity=str(user.id))
-        db.session.commit()
-
-        return jsonify({
-            "message": "Login successful",
-            "access_token": access_token
-        })
-
-    @app.route("/api/apply-service", methods=["POST"])
-    @jwt_required()
-    def apply_service():
-        user_id = get_jwt_identity()
-        # logic for processing the service application goes here
-        return jsonify({"message": "Service applied", "user_id": user_id})
+    @app.errorhandler(500)
+    def server_error(e):
+        return jsonify({"error": "Internal server error"}), 500
 
     return app
 
-# ---------------- CREATE APP ----------------
+# ---------------- APPLICATION STARTUP ----------------
+
 app = create_app()
 
-# Initialize database tables and connection
-init_db()
+# Initialize tables if they don't exist
+with app.app_context():
+    init_db()
 
-# ---------------- RUN SERVER ----------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=True)
+    # Use environment port for production (Render/Heroku/Railway)
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
