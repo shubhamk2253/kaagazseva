@@ -23,9 +23,15 @@ def create_app():
     CORS(app)
 
     # ---------------- CONFIG ----------------
+    # 🔥 STEP 2 — Initialize db in app.py
+    app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["JWT_SECRET_KEY"] = JWT_SECRET_KEY
     app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10MB upload limit
 
+    # IMPORTANT: Bind the SQLAlchemy instance to the app
+    db.init_app(app)
+    
     JWTManager(app)
 
     # ---------------- REGISTER BLUEPRINTS ----------------
@@ -140,7 +146,7 @@ def create_app():
 # ---------------- CREATE APP ----------------
 app = create_app()
 
-# Initialize database
+# Initialize database tables and connection
 init_db()
 
 # ---------------- RUN SERVER ----------------
