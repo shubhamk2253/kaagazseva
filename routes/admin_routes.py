@@ -5,13 +5,50 @@ from sqlalchemy import text
 
 admin_bp = Blueprint('admin_bp', __name__)
 
+# --- AGENT PAYOUT (FOUNDER ONLY) ---
+@admin_bp.route("/api/admin/payout/<agent_id>", methods=["POST"])
+@jwt_required()
+def payout_agent(agent_id):
+    user_id = get_jwt_identity()
+    
+    # Only founder allowed to trigger payouts
+    user = db.session.execute(text("""
+        SELECT role FROM users WHERE id = :id
+    """), {"id": user_id}).fetchone()
+
+    if not user or user.role != "founder":
+        return jsonify({"error": "Unauthorized: Founder access required"}), 403
+
+    # Check agent wallet balance
+    wallet = db.session.execute(text("""
+        SELECT balance FROM agent_wallets WHERE agent_id = :id
+    """), {"id": agent_id}).fetchone()
+
+    if not wallet or wallet.balance <= 0:
+        return jsonify({"message": "No balance available for payout"}), 400
+
+    try:
+        # Reset wallet balance to zero
+        db.session.execute(text("""
+            UPDATE agent_wallets SET balance = 0 WHERE agent_id = :id
+        """), {"id": agent_id})
+        
+        # Note: In a production app, you would insert a record into a 'payout_history' table here.
+
+        db.session.commit()
+        return jsonify({"message": f"Payout of {wallet.balance} processed successfully"}), 200
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Payout failed", "details": str(e)}), 500
+
+
 # --- GET PENDING AGENTS ---
 @admin_bp.route("/api/admin/pending-agents", methods=["GET"])
 @jwt_required()
 def get_pending_agents():
     user_id = get_jwt_identity()
 
-    # Fetch the current user's role
     user = db.session.execute(text("""
         SELECT role FROM users WHERE id = :id
     """), {"id": user_id}).fetchone()
@@ -19,7 +56,6 @@ def get_pending_agents():
     if not user:
         return jsonify({"error": "Unauthorized"}), 403
 
-    # LOGIC FOR FOUNDER: See all pending applications nationally
     if user.role == "founder":
         agents = db.session.execute(text("""
             SELECT ar.id, ar.full_name, ar.mobile, ar.email, ar.state_id, ar.created_at
@@ -28,9 +64,7 @@ def get_pending_agents():
             ORDER BY ar.created_at DESC
         """)).fetchall()
 
-    # LOGIC FOR STATE ADMIN: See only own state's pending applications
     elif user.role == "state_admin":
-        # Get the state_id assigned to this admin from the agents table
         admin_data = db.session.execute(text("""
             SELECT state_id FROM agents WHERE id = :id
         """), {"id": user_id}).fetchone()
@@ -49,7 +83,6 @@ def get_pending_agents():
     else:
         return jsonify({"error": "Unauthorized access level"}), 403
 
-    # Format result for JSON response
     result = []
     for a in agents:
         result.append({
@@ -70,7 +103,6 @@ def get_pending_agents():
 def approve_agent(agent_id):
     user_id = get_jwt_identity()
 
-    # Fetch the current admin's role
     admin = db.session.execute(text("""
         SELECT role FROM users WHERE id = :id
     """), {"id": user_id}).fetchone()
@@ -78,7 +110,6 @@ def approve_agent(agent_id):
     if not admin:
         return jsonify({"error": "Unauthorized"}), 403
 
-    # Fetch the target agent application
     agent_app = db.session.execute(text("""
         SELECT * FROM agent_registrations WHERE id = :id
     """), {"id": agent_id}).fetchone()
@@ -86,7 +117,6 @@ def approve_agent(agent_id):
     if not agent_app:
         return jsonify({"error": "Application not found"}), 404
 
-    # SECURITY CHECK: If state admin, restrict approval to their own state only
     if admin.role == "state_admin":
         admin_state = db.session.execute(text("""
             SELECT state_id FROM agents WHERE id = :id
@@ -95,12 +125,10 @@ def approve_agent(agent_id):
         if not admin_state or agent_app.state_id != admin_state.state_id:
             return jsonify({"error": "Unauthorized: This agent belongs to a different state"}), 403
 
-    # Only Founders and Authorized State Admins can reach this point
     elif admin.role != "founder":
         return jsonify({"error": "Unauthorized"}), 403
 
     try:
-        # 1. Create the user entry and get back the generated UUID
         new_user = db.session.execute(text("""
             INSERT INTO users (id, full_name, mobile, email, role)
             VALUES (gen_random_uuid(), :name, :mobile, :email, 'agent')
@@ -113,7 +141,6 @@ def approve_agent(agent_id):
 
         new_user_id = new_user.id
 
-        # 2. Create the agent profile entry
         db.session.execute(text("""
             INSERT INTO agents (id, state_id, district_id, is_verified)
             VALUES (:id, :state, :district, TRUE)
@@ -123,7 +150,12 @@ def approve_agent(agent_id):
             "district": agent_app.district_id
         })
 
-        # 3. Mark the registration as approved
+        # Initialize the wallet for the new agent
+        db.session.execute(text("""
+            INSERT INTO agent_wallets (agent_id, balance)
+            VALUES (:id, 0)
+        """), {"id": new_user_id})
+
         db.session.execute(text("""
             UPDATE agent_registrations
             SET status='approved'
@@ -147,7 +179,6 @@ def approve_agent(agent_id):
 def reject_agent(agent_id):
     user_id = get_jwt_identity()
     
-    # Check if user is admin/founder
     user_check = db.session.execute(text("SELECT role FROM users WHERE id = :id"), {"id": user_id}).fetchone()
     if not user_check or user_check.role not in ['founder', 'state_admin']:
         return jsonify({"error": "Unauthorized"}), 403
