@@ -4,6 +4,10 @@ import os
 from dotenv import load_dotenv
 from datetime import timedelta
 
+import os
+
+SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL")
+SQLALCHEMY_TRACK_MODIFICATIONS = False
 # Load environment variables from .env
 load_dotenv()
 
@@ -32,3 +36,4 @@ DEFAULT_RATE_LIMIT_HOUR = "50 per hour"
 
 # ---------------- ADMIN SECURITY ----------------
 ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "super-secret-admin-key")
+
