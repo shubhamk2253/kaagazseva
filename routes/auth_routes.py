@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from werkzeug.security import check_password_hash, generate_password_hash
 from sqlalchemy import text
-import models from db
+from models import db
 from datetime import datetime, timedelta
 import random
 
@@ -149,5 +149,6 @@ def change_password():
     db.session.commit()
 
     return jsonify(success=True, message="Password updated successfully"), 200
+
 
 
