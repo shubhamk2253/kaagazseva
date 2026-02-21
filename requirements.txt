@@ -15,4 +15,8 @@ Flask-Migrate==4.0.7
 alembic==1.13.1
 
 # Fix for pkg_resources error in Python 3.14
+
 setuptools<82.0.0
+
+flask-jwt-extended
+pyotp
