@@ -92,16 +92,16 @@ def approve_agent(agent_id):
             SELECT state_id FROM agents WHERE id = :id
         """), {"id": user_id}).fetchone()
 
-        if agent_app.state_id != admin_state.state_id:
+        if not admin_state or agent_app.state_id != admin_state.state_id:
             return jsonify({"error": "Unauthorized: This agent belongs to a different state"}), 403
 
-    # Only Founders and State Admins can reach this point
+    # Only Founders and Authorized State Admins can reach this point
     elif admin.role != "founder":
         return jsonify({"error": "Unauthorized"}), 403
 
     try:
-        # 1. Create the user entry
-        new_user_id_row = db.session.execute(text("""
+        # 1. Create the user entry and get back the generated UUID
+        new_user = db.session.execute(text("""
             INSERT INTO users (id, full_name, mobile, email, role)
             VALUES (gen_random_uuid(), :name, :mobile, :email, 'agent')
             RETURNING id
@@ -111,7 +111,7 @@ def approve_agent(agent_id):
             "email": agent_app.email
         }).fetchone()
 
-        new_user_id = new_user_id_row.id
+        new_user_id = new_user.id
 
         # 2. Create the agent profile entry
         db.session.execute(text("""
@@ -131,17 +131,32 @@ def approve_agent(agent_id):
         """), {"id": agent_id})
 
         db.session.commit()
-        return jsonify({"message": f"Agent {agent_app.full_name} approved successfully", "user_id": str(new_user_id)})
+        return jsonify({
+            "message": f"Agent {agent_app.full_name} approved successfully", 
+            "user_id": str(new_user_id)
+        }), 200
 
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
 
-# --- REJECT AGENT (Optional helper) ---
+
+# --- REJECT AGENT ---
 @admin_bp.route("/api/admin/reject-agent/<agent_id>", methods=["POST"])
 @jwt_required()
 def reject_agent(agent_id):
-    # Logic similar to approval but sets status to 'rejected'
-    db.session.execute(text("UPDATE agent_registrations SET status='rejected' WHERE id=:id"), {"id": agent_id})
+    user_id = get_jwt_identity()
+    
+    # Check if user is admin/founder
+    user_check = db.session.execute(text("SELECT role FROM users WHERE id = :id"), {"id": user_id}).fetchone()
+    if not user_check or user_check.role not in ['founder', 'state_admin']:
+        return jsonify({"error": "Unauthorized"}), 403
+
+    db.session.execute(text("""
+        UPDATE agent_registrations 
+        SET status='rejected' 
+        WHERE id=:id
+    """), {"id": agent_id})
+    
     db.session.commit()
-    return jsonify({"message": "Agent application rejected"})
+    return jsonify({"message": "Agent application rejected"}), 200
