@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 import uuid
 import os
-from extensions import db
+from models import db
 from sqlalchemy import text
 from flask_jwt_extended import get_jwt_identity
 from utils.security import role_required
@@ -127,3 +127,4 @@ def get_my_applications():
         return jsonify(result), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
