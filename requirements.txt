@@ -1,22 +1,27 @@
+# Web Framework and Security
 Flask==3.0.0
 flask-cors==4.0.0
 flask-jwt-extended==4.6.0
 flask-limiter==3.5.0
-python-dotenv==1.0.1
 Werkzeug==3.0.1
-razorpay>=2.0.0
 bleach==6.1.0
-qrcode==7.4.2
 
-# Production server
-gunicorn==22.0.0
+# Database and Migrations
 SQLAlchemy==2.0.29
 Flask-Migrate==4.0.7
 alembic==1.13.1
+psycopg2-binary
 
-# Fix for pkg_resources error in Python 3.14
-
-setuptools<82.0.0
-
-flask-jwt-extended
+# Authentication and Logic
 pyotp
+python-dotenv==1.0.1
+qrcode==7.4.2
+
+# External Services
+razorpay>=2.0.0
+
+# Production server
+gunicorn==22.0.0
+
+# System and Environment Fixes
+setuptools<82.0.0
