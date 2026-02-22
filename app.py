@@ -9,32 +9,37 @@ from config import JWT_SECRET_KEY
 from database import init_db
 from models import db
 
-# Route blueprints - Ensure the filenames match your directory structure
+# Route blueprints
 from routes.auth_routes import auth_bp
 from routes.agent_routes import agent_bp
 from routes.admin_routes import admin_bp
 from routes.payment_routes import payment_bp
-from routes.public_routes import public_bp  # Fixed naming to match standard
+from routes.public_routes import public_bp
 
 def create_app():
     app = Flask(__name__)
     
-    # Enable CORS for frontend integration
+    # Enable CORS
     CORS(app)
 
     # ---------------- CONFIGURATION ----------------
-    # Uses environment variables for security (ensure DATABASE_URL is set in your .env)
-    app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
+    # Fix for Heroku/Render/Railway: Postgres strings must start with postgresql://
+    db_url = os.getenv("DATABASE_URL", "sqlite:///database.db")
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+    app.config["SQLALCHEMY_DATABASE_URI"] = db_url
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["JWT_SECRET_KEY"] = JWT_SECRET_KEY
-    app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10MB upload limit
+    app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
     # Initialize extensions
     db.init_app(app)
     JWTManager(app)
 
     # ---------------- REGISTER BLUEPRINTS ----------------
-    # url_prefix ensures routes are organized (e.g., /api/auth/send-otp)
+    # Prefixes are defined here ONCE. 
+    # Ensure your route files do NOT repeat "/api/auth" in the @bp.route decorator.
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(agent_bp, url_prefix="/api/agent")
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
@@ -48,14 +53,13 @@ def create_app():
         return {
             "status": "success",
             "message": "KaagazSeva Backend is Live 🚀",
-            "version": "1.0.0"
+            "version": "1.0.1"
         }
 
     @app.route("/health")
     def health():
-        """Used by cloud providers to check if service is running."""
         try:
-            # Simple query to check DB connectivity
+            # Check DB connectivity
             db.session.execute(text("SELECT 1"))
             return {"status": "ok", "database": "connected"}, 200
         except Exception as e:
@@ -77,11 +81,14 @@ def create_app():
 
 app = create_app()
 
-# Initialize tables if they don't exist
+# Unified database initialization
 with app.app_context():
+    # This creates all tables in the DATABASE_URL (Postgres or SQLite)
+    db.create_all()
+    # If you have specific seeding logic in init_db, it runs here
     init_db()
 
 if __name__ == "__main__":
-    # Use environment port for production (Render/Heroku/Railway)
     port = int(os.getenv("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    # Debug set to False for production safety, True for local dev
+    app.run(host="0.0.0.0", port=port, debug=os.getenv("DEBUG", "True") == "True")
