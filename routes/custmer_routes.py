@@ -7,27 +7,10 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from utils.security import role_required
 from datetime import datetime
 
-public_bp = Blueprint('public_bp', __name__)
+customer_bp = Blueprint('customer_bp', __name__)
 
-# ---------------- SERVICE PRICE (Public) ----------------
-@public_bp.route("/api/service-price", methods=["GET"])
-def get_service_price():
-    service_name = request.args.get("service")
-
-    try:
-        row = db.session.execute(text("""
-            SELECT price FROM services WHERE service_name = :name
-        """), {"name": service_name}).fetchone()
-
-        # Fallback to 500 if service not found
-        price = row.price if row else 500
-        return jsonify({"price": price}), 200
-    except Exception as e:
-        return jsonify({"error": "Could not fetch price", "details": str(e)}), 500
-
-
-# ---------------- APPLY SERVICE (Customer Protected) ----------------
-@public_bp.route('/api/apply-service', methods=['POST'])
+# ---------------- APPLY SERVICE ----------------
+@customer_bp.route('/api/apply-service', methods=['POST'])
 @role_required("customer")
 def apply():
     try:
@@ -60,42 +43,26 @@ def apply():
                 'Pending Payment', :file, NOW()
             )
         """), {
-            "app_id": app_id,
-            "u_id": user_id,
-            "name": name,
-            "mobile": mobile,
-            "service": service,
-            "pin": pincode,
-            "file": file_path
+            "app_id": app_id, "u_id": user_id, "name": name, 
+            "mobile": mobile, "service": service, "pin": pincode, "file": file_path
         })
         
         db.session.commit()
-
-        return jsonify({
-            "success": True,
-            "application_id": app_id,
-            "message": "Application submitted successfully"
-        }), 201
+        return jsonify({"success": True, "application_id": app_id}), 201
 
     except Exception as e:
         db.session.rollback()
-        return jsonify({"success": False, "msg": "Database Error", "details": str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
-# ---------------- GET CUSTOMER APPLICATIONS (Detailed) ----------------
-@public_bp.route("/api/customer/applications", methods=["GET"])
+# ---------------- GET APPLICATIONS ----------------
+@customer_bp.route("/api/customer/applications", methods=["GET"])
 @role_required("customer")
 def get_customer_applications():
     user_id = get_jwt_identity()
-
     try:
         apps = db.session.execute(text("""
-            SELECT a.id,
-                   ss.service_name,
-                   a.status,
-                   p.status AS payment_status,
-                   a.mode,
-                   a.created_at
+            SELECT a.id, ss.service_name, a.status, p.status AS payment_status, a.mode, a.created_at
             FROM applications a
             JOIN state_services ss ON a.state_service_id = ss.id
             LEFT JOIN payments p ON p.application_id = a.id
@@ -103,77 +70,53 @@ def get_customer_applications():
             ORDER BY a.created_at DESC
         """), {"user": user_id}).fetchall()
 
-        result = []
-        for a in apps:
-            result.append({
-                "id": str(a.id),
-                "service_name": a.service_name,
-                "status": a.status,
-                "payment_status": a.payment_status,
-                "mode": a.mode,
-                "created_at": a.created_at.isoformat() if a.created_at else None
-            })
-
-        return jsonify(result), 200
+        return jsonify([{
+            "id": str(a.id),
+            "service_name": a.service_name,
+            "status": a.status,
+            "payment_status": a.payment_status,
+            "mode": a.mode,
+            "created_at": a.created_at.isoformat() if a.created_at else None
+        } for a in apps]), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
 # ---------------- RAISE TICKET ----------------
-@public_bp.route("/api/customer/raise-ticket", methods=["POST"])
+@customer_bp.route("/api/customer/raise-ticket", methods=["POST"])
 @role_required("customer")
 def raise_ticket():
     user_id = get_jwt_identity()
     data = request.json
-
-    if not data or "application_id" not in data or "category" not in data:
-        return jsonify({"error": "Missing required fields"}), 400
-
     try:
         db.session.execute(text("""
-            INSERT INTO tickets 
-            (application_id, user_id, category, description, priority, created_at)
+            INSERT INTO tickets (application_id, user_id, category, description, priority, created_at)
             VALUES (:app, :user, :category, :desc, :priority, :now)
         """), {
-            "app": data["application_id"],
-            "user": user_id,
-            "category": data["category"],
-            "desc": data["description"],
-            "priority": data.get("priority", "normal"),
-            "now": datetime.utcnow()
+            "app": data["application_id"], "user": user_id, "category": data["category"],
+            "desc": data["description"], "priority": data.get("priority", "normal"), "now": datetime.utcnow()
         })
-
         db.session.commit()
-        return jsonify({"message": "Ticket submitted for review"}), 201
+        return jsonify({"message": "Ticket submitted"}), 201
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Failed to submit ticket", "details": str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 
-# ---------------- GET MY TICKETS ----------------
-@public_bp.route("/api/customer/my-tickets", methods=["GET"])
+# ---------------- MY TICKETS ----------------
+@customer_bp.route("/api/customer/my-tickets", methods=["GET"])
 @role_required("customer")
 def get_my_tickets():
     user_id = get_jwt_identity()
-    
     try:
         result = db.session.execute(text("""
             SELECT id, application_id, category, status, priority, created_at 
-            FROM tickets 
-            WHERE user_id = :user
-            ORDER BY created_at DESC
+            FROM tickets WHERE user_id = :user ORDER BY created_at DESC
         """), {"user": user_id}).fetchall()
         
-        tickets = []
-        for row in result:
-            tickets.append({
-                "id": row.id,
-                "application_id": row.application_id,
-                "category": row.category,
-                "status": row.status,
-                "priority": row.priority,
-                "created_at": row.created_at.isoformat() if row.created_at else None
-            })
-        return jsonify(tickets), 200
+        return jsonify([{
+            "id": row.id, "application_id": row.application_id, "category": row.category,
+            "status": row.status, "priority": row.priority, "created_at": row.created_at
+        } for row in result]), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
