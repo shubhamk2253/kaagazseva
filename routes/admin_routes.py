@@ -8,68 +8,131 @@ from datetime import datetime
 
 admin_bp = Blueprint('admin_bp', __name__)
 
-# --- 1. FOUNDER DASHBOARD & ANALYTICS ---
-@admin_bp.route("/api/admin/dashboard", methods=["GET"])
+# --- 1. THE CONTROL TOWER (ELITE ANALYTICS) ---
+@admin_bp.route("/api/founder/control-tower", methods=["GET"])
 @role_required("founder")
-def founder_dashboard():
+def founder_control_tower():
     try:
-        # 1️⃣ Revenue & Commission Summary
-        # Using COALESCE to ensure 0 is returned instead of None
+        # Optimized Multi-Query Execution
         stats = db.session.execute(text("""
             SELECT 
-                (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status='paid') as total_revenue,
-                (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status='refunded') as total_refunds,
-                (SELECT COALESCE(SUM(balance), 0) FROM agent_wallets) as pending_payouts,
+                (SELECT COALESCE(SUM(amount),0) FROM payments WHERE status='Paid') as total_rev,
+                (SELECT COALESCE(SUM(amount),0) FROM payments WHERE status='Paid' AND DATE(created_at)=CURRENT_DATE) as today_rev,
+                (SELECT COALESCE(SUM(platform_commission),0) FROM applications WHERE status='Completed') as total_prof,
+                (SELECT COALESCE(SUM(balance),0) FROM agent_wallets) as pend_payout,
                 (SELECT COUNT(*) FROM applications) as total_apps,
-                (SELECT COUNT(*) FROM agents WHERE is_verified=TRUE) as active_agents
-            """)).fetchone()
+                (SELECT COUNT(*) FROM tickets WHERE category='Refund' AND status='Resolved') as ref_apps
+        """)).fetchone()
 
-        # 2️⃣ Refund Ratio Calculation
-        refunded_count = db.session.execute(text("""
-            SELECT COUNT(*) FROM tickets 
-            WHERE category='Refund' AND status='Resolved'
-        """)).scalar() or 0
-        
-        refund_ratio = (refunded_count / stats.total_apps * 100) if stats.total_apps > 0 else 0
+        refund_ratio = (stats.ref_apps / stats.total_apps * 100) if stats.total_apps else 0
+        risk_status = "HIGH REFUND RISK" if refund_ratio > 15 else "STABLE"
 
-        # 3️⃣ State Performance (Market Share)
-        state_data = db.session.execute(text("""
-            SELECT state_id, COUNT(*) as total
-            FROM applications
-            GROUP BY state_id
-            ORDER BY total DESC
-        """)).fetchall()
-
-        # 4️⃣ Top Performing Agents
+        # Data Breakdown
+        state_data = db.session.execute(text("SELECT state_id, COUNT(*) as total FROM applications GROUP BY state_id ORDER BY total DESC")).fetchall()
         agent_data = db.session.execute(text("""
-            SELECT u.full_name, COUNT(a.id) as completed
-            FROM applications a
-            JOIN users u ON a.agent_id = u.id
-            WHERE a.status='Completed'
-            GROUP BY u.full_name
-            ORDER BY completed DESC
-            LIMIT 5
+            SELECT u.full_name, COUNT(a.id) as completed FROM applications a 
+            JOIN users u ON a.agent_id = u.id WHERE a.status='Completed' 
+            GROUP BY u.full_name ORDER BY completed DESC LIMIT 10
         """)).fetchall()
 
         return jsonify({
-            "summary": {
-                "total_revenue": float(stats.total_revenue),
-                "total_refunds": float(stats.total_refunds),
-                "net_revenue": float(stats.total_revenue - stats.total_refunds),
-                "pending_payouts": float(stats.pending_payouts),
-                "active_agents": stats.active_agents,
-                "refund_ratio_percent": round(refund_ratio, 2)
+            "metrics": {
+                "total_revenue": float(stats.total_rev),
+                "today_revenue": float(stats.today_rev),
+                "total_profit": float(stats.total_prof),
+                "pending_payouts": float(stats.pend_payout),
+                "refund_ratio_percent": round(refund_ratio, 2),
+                "total_applications": stats.total_apps
             },
-            "state_performance": [{"state_id": row.state_id, "count": row.total} for row in state_data],
-            "top_agents": [{"name": row.full_name, "completed": row.completed} for row in agent_data]
+            "state_performance": [{"state": r.state_id, "applications": r.total} for r in state_data],
+            "top_agents": [{"agent": r.full_name, "completed_orders": r.completed} for r in agent_data],
+            "risk_status": risk_status
         }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
-# --- 2. AGENT MANAGEMENT (APPROVE/REJECT) ---
+# --- 2. AGENT APPROVAL SYSTEM ---
 @admin_bp.route("/api/admin/pending-agents", methods=["GET"])
-@role_required("founder") # Logic inside handles state_admin escalation
+@role_required("founder")
+def get_pending_agents():
+    user_id = get_jwt_identity()
+    user = db.session.execute(text("SELECT role FROM users WHERE id = :id"), {"id": user_id}).fetchone()
+    
+    query = "SELECT * FROM agent_registrations WHERE status = 'pending'"
+    params = {}
+    
+    if user.role == "state_admin":
+        admin_state = db.session.execute(text("SELECT state_id FROM agents WHERE id = :id"), {"id": user_id}).fetchone()
+        query += " AND state_id = :sid"
+        params["sid"] = admin_state.state_id
+
+    result = db.session.execute(text(query + " ORDER BY created_at DESC"), params).fetchall()
+    return jsonify([dict(r._mapping) for r in result])
+
+@admin_bp.route("/api/admin/approve-agent/<registration_id>", methods=["POST"])
+@role_required("founder")
+def approve_agent(registration_id):
+    reg = db.session.execute(text("SELECT * FROM agent_registrations WHERE id = :id"), {"id": registration_id}).fetchone()
+    if not reg: return jsonify({"error": "Not found"}), 404
+
+    try:
+        new_id = str(uuid.uuid4())
+        db.session.execute(text("INSERT INTO users (id, full_name, mobile, email, role) VALUES (:id, :n, :m, :e, 'agent')"),
+                           {"id": new_id, "n": reg.full_name, "m": reg.mobile, "e": reg.email})
+        db.session.execute(text("INSERT INTO agents (id, state_id, district_id, is_verified) VALUES (:id, :s, :d, TRUE)"),
+                           {"id": new_id, "s": reg.state_id, "d": reg.district_id})
+        db.session.execute(text("INSERT INTO agent_wallets (agent_id, balance) VALUES (:id, 0)"), {"id": new_id})
+        db.session.execute(text("UPDATE agent_registrations SET status='approved' WHERE id=:id"), {"id": registration_id})
+        db.session.commit()
+        return jsonify({"message": "Agent Approved", "id": new_id}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+# --- 3. PAYOUTS & REJECTS ---
+@admin_bp.route("/api/admin/payout/<agent_id>", methods=["POST"])
+@role_required("founder")
+def payout_agent(agent_id):
+    wallet = db.session.execute(text("SELECT balance FROM agent_wallets WHERE agent_id = :id"), {"id": agent_id}).fetchone()
+    if not wallet or wallet.balance <= 0: return jsonify({"error": "No balance"}), 400
+
+    db.session.execute(text("UPDATE agent_wallets SET balance = 0 WHERE agent_id = :id"), {"id": agent_id})
+    db.session.execute(text("INSERT INTO payout_history (agent_id, amount, created_at) VALUES (:id, :a, NOW())"), 
+                       {"id": agent_id, "a": wallet.balance})
+    db.session.commit()
+    return jsonify({"message": "Payout Success"}), 200
+
+@admin_bp.route("/api/admin/reject-agent/<registration_id>", methods=["POST"])
+@role_required("founder")
+def reject_agent(registration_id):
+    db.session.execute(text("UPDATE agent_registrations SET status='rejected' WHERE id=:id"), {"id": registration_id})
+    db.session.commit()
+    return jsonify({"message": "Rejected"}), 200
+
+# --- 4. TICKET RESOLUTION ---
+@admin_bp.route("/api/admin/open-tickets", methods=["GET"])
+@role_required("founder")
+def view_tickets():
+    res = db.session.execute(text("""
+        SELECT t.*, u.full_name FROM tickets t 
+        JOIN users u ON t.user_id = u.id WHERE t.status != 'Resolved'
+    """)).fetchall()
+    return jsonify([dict(r._mapping) for r in res])
+
+@admin_bp.route("/api/admin/resolve-ticket/<ticket_id>", methods=["POST"])
+@role_required("founder")
+def resolve_ticket(ticket_id):
+    data = request.json
+    is_refund = data.get("approve_refund", False)
+    ticket = db.session.execute(text("SELECT application_id FROM tickets WHERE id=:id"), {"id": ticket_id}).fetchone()
+    
+    if is_refund:
+        db.session.execute(text("UPDATE payments SET status='refunded' WHERE application_id=:a"), {"a": ticket.application_id})
+    
+    db.session.execute(text("UPDATE tickets SET status='Resolved', resolution_note=:n, updated_at=NOW() WHERE id=:id"), 
+                       {"n": data.get("note"), "id": ticket_id})
+    db.session.commit()
+    return jsonify({"message": "Resolved"})@role_required("founder") # Logic inside handles state_admin escalation
 def get_pending_agents():
     user_id = get_jwt_identity()
     user = db.session.execute(text("SELECT role FROM users WHERE id = :id"), {"id": user_id}).fetchone()
@@ -348,4 +411,5 @@ def resolve_ticket(ticket_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Resolution failed", "details": str(e)}), 500
+
 
