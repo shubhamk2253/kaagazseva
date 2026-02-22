@@ -1,13 +1,8 @@
-import sqlite3
+from models import db
+from sqlalchemy import text
 from flask_jwt_extended import verify_jwt_in_request, get_jwt_identity, get_jwt
 
-def get_db():
-    conn = sqlite3.connect('database.db', timeout=10)
-    conn.row_factory = sqlite3.Row
-    return conn
-
 def log_audit(action, target_id=None):
-    """Centralized enterprise audit logger"""
     username = "SYSTEM"
     role = "SYSTEM"
 
@@ -20,9 +15,14 @@ def log_audit(action, target_id=None):
     except:
         pass
 
-    with get_db() as conn:
-        conn.execute("""
-            INSERT INTO audit_logs(action, performer, role, target_id)
-            VALUES(?,?,?,?)
-        """, (action, username, role, target_id))
-        conn.commit()
+    db.session.execute(text("""
+        INSERT INTO audit_logs(action, performer, role, target_id)
+        VALUES (:action, :performer, :role, :target)
+    """), {
+        "action": action,
+        "performer": username,
+        "role": role,
+        "target": target_id
+    })
+
+    db.session.commit()
