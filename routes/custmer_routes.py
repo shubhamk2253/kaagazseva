@@ -6,6 +6,8 @@ from sqlalchemy import text
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from utils.security import role_required
 from datetime import datetime
+# Import the S3 utility (Ensure this file exists in utils/s3_service.py)
+from utils.s3_service import upload_file 
 
 customer_bp = Blueprint('customer_bp', __name__)
 
@@ -22,16 +24,15 @@ def apply():
         service = request.form.get('service')
         pincode = request.form.get('pincode')
 
-        # Handle File Upload
+        # Handle File Upload via S3
         file = request.files.get('document')
-        file_path = ""
+        file_key = "" # Renamed from file_path to reflect S3 key
 
         if file:
-            upload_folder = 'uploads'
-            os.makedirs(upload_folder, exist_ok=True)
-            filename = f"{app_id}_{file.filename}"
-            file_path = os.path.join(upload_folder, filename)
-            file.save(file_path)
+            # Generate a unique key for S3 to avoid naming collisions
+            file_key = f"{app_id}_{file.filename}"
+            # Uploading directly to S3
+            upload_file(file, file_key)
 
         db.session.execute(text("""
             INSERT INTO applications (
@@ -44,7 +45,7 @@ def apply():
             )
         """), {
             "app_id": app_id, "u_id": user_id, "name": name, 
-            "mobile": mobile, "service": service, "pin": pincode, "file": file_path
+            "mobile": mobile, "service": service, "pin": pincode, "file": file_key
         })
         
         db.session.commit()
