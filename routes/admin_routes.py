@@ -7,6 +7,44 @@ import uuid
 
 admin_bp = Blueprint('admin_bp', __name__)
 
+# --- ADMIN ANALYTICS (FOUNDER ONLY) ---
+@admin_bp.route("/api/admin/analytics", methods=["GET"])
+@role_required("founder")
+def admin_analytics():
+    # Calculate Revenue
+    revenue = db.session.execute(text("""
+        SELECT SUM(amount)
+        FROM payments
+        WHERE status='paid'
+    """)).scalar()
+
+    # Calculate Refunds
+    refunds = db.session.execute(text("""
+        SELECT SUM(amount)
+        FROM payments
+        WHERE status='refunded'
+    """)).scalar()
+
+    # Count Active Agents
+    active_agents = db.session.execute(text("""
+        SELECT COUNT(*) FROM agents
+        WHERE is_verified=TRUE
+    """)).scalar()
+
+    # Count Pending Agents
+    pending_agents = db.session.execute(text("""
+        SELECT COUNT(*) FROM agents
+        WHERE is_verified=FALSE
+    """)).scalar()
+
+    return jsonify({
+        "total_revenue": float(revenue or 0),
+        "total_refunds": float(refunds or 0),
+        "active_agents": active_agents,
+        "pending_agents": pending_agents
+    })
+
+
 # --- AGENT PAYOUT (FOUNDER ONLY) ---
 @admin_bp.route("/api/admin/payout/<agent_id>", methods=["POST"])
 @role_required("founder")
