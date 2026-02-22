@@ -3,6 +3,8 @@ from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 import os
 from sqlalchemy import text
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 # Core internal modules
 from config import JWT_SECRET_KEY
@@ -18,6 +20,13 @@ from routes.public_routes import public_bp
 
 def create_app():
     app = Flask(__name__)
+    
+    # Initialize Limiter for security (Rate limiting)
+    limiter = Limiter(
+        get_remote_address,
+        app=app,
+        default_limits=["200 per day", "50 per hour"]
+    )
     
     # Enable CORS
     CORS(app)
