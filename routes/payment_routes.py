@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 import razorpay, os
-from database import get_db
-from services.assignment_service import auto_assign_agent
+from sqlalchemy import text
+from models import db
 from services.notification_service import notify_payment_success
 from utils.assignment import assign_best_agent
 
@@ -39,47 +39,55 @@ def create_order():
 def verify():
     data = request.get_json()
 
-    razorpay_client.utility.verify_payment_signature({
-        "razorpay_order_id": data['order_id'],
-        "razorpay_payment_id": data['payment_id'],
-        "razorpay_signature": data['signature']
-    })
+    try:
+        # Verify Razorpay signature
+        razorpay_client.utility.verify_payment_signature({
+            "razorpay_order_id": data['order_id'],
+            "razorpay_payment_id": data['payment_id'],
+            "razorpay_signature": data['signature']
+        })
 
-    with get_db() as conn:
-        conn.execute(
-            "INSERT INTO payments(application_id, amount, payment_status) VALUES(?,?,?)",
-            (data['application_id'], data['amount'], "Paid")
-        )
+        # Get application details needed for assignment using SQLAlchemy
+        row = db.session.execute(text("""
+            SELECT mobile, state_id, service_name 
+            FROM applications 
+            WHERE application_id = :app_id
+        """), {"app_id": data['application_id']}).mappings().fetchone()
 
-        # Get application details needed for assignment
-        row = conn.execute(
-            "SELECT mobile, pincode, state_id, service_name FROM applications WHERE application_id=?",
-            (data['application_id'],)
-        ).fetchone()
+        if not row:
+            return jsonify({"error": "Application not found"}), 404
 
-        mobile = row["mobile"]
-        pincode = row["pincode"]
-        state_id = row["state_id"]
-        service_name = row["service_name"]
+        # 1️⃣ Insert payment record
+        db.session.execute(text("""
+            INSERT INTO payments (application_id, amount, payment_status)
+            VALUES (:app_id, :amount, 'Paid')
+        """), {
+            "app_id": data['application_id'],
+            "amount": data['amount']
+        })
 
-        # Assign best agent based on state and service
-        agent_id = assign_best_agent(state_id, service_name)
+        # 2️⃣ Assign best agent
+        agent_id = assign_best_agent(row["state_id"], row["service_name"])
 
-        # Update application with Payment status, Assigned Agent, and Processing Status
-        conn.execute(
-            """
-            UPDATE applications 
-            SET payment_status='Paid', 
-                agent_id = ?, 
-                status = 'processing' 
-            WHERE application_id=?
-            """,
-            (agent_id, data['application_id'])
-        )
+        # 3️⃣ Update application
+        db.session.execute(text("""
+            UPDATE applications
+            SET payment_status='Paid',
+                agent_id=:agent,
+                status='processing'
+            WHERE application_id=:app_id
+        """), {
+            "agent": agent_id,
+            "app_id": data['application_id']
+        })
 
-        conn.commit()
+        db.session.commit()
 
-    # Notify customer
-    notify_payment_success(mobile, data['application_id'], data['amount'])
+        # Notify customer
+        notify_payment_success(row["mobile"], data['application_id'], data['amount'])
 
-    return jsonify(success=True, agent_id=agent_id)
+        return jsonify(success=True, agent_id=agent_id)
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify(success=False, error=str(e)), 500
