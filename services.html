@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Our Services | Professional Portal</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #0a4fa3;
+            --secondary: #2c3e50;
+            --accent: #e74c3c;
+            --success: #27ae60;
+            --bg: #f4f7f9;
+            --card-bg: #ffffff;
+        }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            background: var(--bg);
+            margin: 0;
+            color: var(--secondary);
+        }
+
+        .header-section {
+            background: linear-gradient(135deg, var(--primary), #1e3a8a);
+            color: white;
+            padding: 60px 20px;
+            text-align: center;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: -40px auto 40px;
+            padding: 0 20px;
+        }
+
+        /* Filter Bar */
+        .filter-bar {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        select, input {
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+            outline: none;
+        }
+
+        select:focus, input:focus { border-color: var(--primary); }
+
+        /* Grid System */
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 25px;
+        }
+
+        .service-card {
+            background: var(--card-bg);
+            border-radius: 15px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            border: 1px solid #eee;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .service-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+        }
+
+        .card-body { padding: 25px; flex-grow: 1; }
+
+        .service-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin: 0 0 15px 0;
+        }
+
+        .price-tag {
+            background: #eef4ff;
+            color: var(--primary);
+            padding: 10px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .total-price { font-size: 1.5rem; font-weight: 800; }
+
+        .fee-breakdown {
+            font-size: 0.85rem;
+            color: #666;
+            border-top: 1px dashed #ddd;
+            padding-top: 10px;
+            margin-top: 10px;
+        }
+
+        .info-row {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+            font-size: 0.9rem;
+        }
+
+        .info-row i { width: 25px; color: var(--primary); }
+
+        .card-footer {
+            padding: 15px 25px;
+            background: #fcfcfc;
+            border-top: 1px solid #eee;
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            flex: 1;
+            transition: 0.2s;
+            text-align: center;
+            text-decoration: none;
+        }
+
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-outline { background: white; color: var(--primary); border: 1px solid var(--primary); }
+        
+        .btn:hover { opacity: 0.9; }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6);
+            z-index: 1000;
+            align-items: center; justify-content: center;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            max-width: 500px;
+            width: 90%;
+            position: relative;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .filter-bar { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="header-section">
+    <h1>Government Services & Pricing</h1>
+    <p>Select your state to view updated fees and required documents</p>
+</div>
+
+<div class="container">
+    <div class="filter-bar">
+        <select id="stateSelect" onchange="loadServices()">
+            <option value="">-- Select State --</option>
+            </select>
+        <input type="text" id="searchInput" placeholder="Search for a service..." onkeyup="filterCards()">
+        <div style="display:flex; align-items: center; font-weight: 600; color: var(--primary);">
+            <i class="fa fa-info-circle mr-2"></i> &nbsp; Transparent Pricing
+        </div>
+    </div>
+
+    <div id="servicesContainer" class="services-grid">
+        <div style="text-align:center; grid-column: 1/-1; color: #888; padding: 40px;">
+            <i class="fa fa-map-marker-alt fa-3x"></i>
+            <p>Please select a state to view available services</p>
+        </div>
+    </div>
+</div>
+
+<div id="docModal" class="modal">
+    <div class="modal-content">
+        <h3 id="modalTitle" style="color:var(--primary)">Required Documents</h3>
+        <ul id="docList" style="line-height: 2;"></ul>
+        <button class="btn btn-primary" onclick="closeModal()" style="width:100%; margin-top:15px;">Close</button>
+    </div>
+</div>
+
+<script src="../config.js"></script>
+<script>
+    let allServices = [];
+
+    // 1. Load States on startup
+    async function loadStates() {
+        const res = await fetch(API_BASE + "/api/states");
+        const states = await res.json();
+        const select = document.getElementById("stateSelect");
+        states.forEach(s => {
+            select.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+        });
+    }
+
+    // 2. Load Services for Selected State
+    async function loadServices() {
+        const stateId = document.getElementById("stateSelect").value;
+        if(!stateId) return;
+
+        const container = document.getElementById("servicesContainer");
+        container.innerHTML = `<div style="text-align:center; grid-column: 1/-1;">Loading services...</div>`;
+
+        try {
+            const res = await fetch(API_BASE + `/api/services/${stateId}`);
+            allServices = await res.json();
+            renderCards(allServices);
+        } catch (e) {
+            container.innerHTML = "Error loading services.";
+        }
+    }
+
+    // 3. Render Cards
+    function renderCards(data) {
+        const container = document.getElementById("servicesContainer");
+        container.innerHTML = "";
+
+        data.forEach(s => {
+            container.innerHTML += `
+                <div class="service-card" data-title="${s.service_name.toLowerCase()}">
+                    <div class="card-body">
+                        <h3 class="service-title">${s.service_name}</h3>
+                        <div class="price-tag">
+                            <span>Total Fee:</span>
+                            <span class="total-price">₹${s.final_price}</span>
+                        </div>
+                        <div class="info-row">
+                            <i class="fa fa-clock"></i> 
+                            <span>Processing: <strong>${s.processing_time}</strong></span>
+                        </div>
+                        <div class="fee-breakdown">
+                            Govt Fee: ₹${s.government_fee} | Service: ₹${s.service_fee}
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <button class="btn btn-outline" onclick="showDocs('${s.service_name}', '${s.documents}')">
+                            <i class="fa fa-file-alt"></i> Docs
+                        </button>
+                        <button class="btn btn-primary" onclick="applyNow('${s.id}')">
+                            Apply Now
+                        </button>
+                    </div>
+                </div>
+            `;
+        });
+    }
+
+    // 4. Search Filter
+    function filterCards() {
+        const query = document.getElementById("searchInput").value.toLowerCase();
+        const cards = document.querySelectorAll('.service-card');
+        cards.forEach(card => {
+            const title = card.getAttribute('data-title');
+            card.style.display = title.includes(query) ? "flex" : "none";
+        });
+    }
+
+    // 5. Show Modal
+    function showDocs(title, docs) {
+        document.getElementById("modalTitle").innerText = title + " Documents";
+        const list = document.getElementById("docList");
+        list.innerHTML = docs.split(',').map(d => `<li><i class="fa fa-check-circle" style="color:var(--success)"></i> ${d.trim()}</li>`).join('');
+        document.getElementById("docModal").style.display = "flex";
+    }
+
+    function closeModal() {
+        document.getElementById("docModal").style.display = "none";
+    }
+
+    function applyNow(id) {
+        // Check login and redirect to application form
+        if(!localStorage.getItem("token")) {
+            window.location.href = "login.html?redirect=apply&service=" + id;
+        } else {
+            window.location.href = "apply.html?service=" + id;
+        }
+    }
+
+    loadStates();
+</script>
+</body>
+</html>
