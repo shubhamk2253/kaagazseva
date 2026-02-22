@@ -132,3 +132,81 @@ def reject_agent(registration_id):
     db.session.commit()
     return jsonify({"message": "Agent application rejected"}), 200
 
+
+# --- VIEW OPEN TICKETS (FOUNDER ONLY) ---
+@admin_bp.route("/api/admin/open-tickets", methods=["GET"])
+@role_required("founder")
+def view_open_tickets():
+    tickets = db.session.execute(text("""
+        SELECT t.id, t.application_id, t.category, t.priority,
+               t.description, u.full_name
+        FROM tickets t
+        JOIN users u ON t.user_id = u.id
+        WHERE t.resolution_note IS NULL
+        ORDER BY t.created_at DESC
+    """)).fetchall()
+
+    result = []
+    for t in tickets:
+        result.append({
+            "id": str(t.id),
+            "application_id": str(t.application_id),
+            "category": t.category,
+            "priority": t.priority,
+            "description": t.description,
+            "user": t.full_name
+        })
+
+    return jsonify(result)
+
+
+# --- RESOLVE TICKET (FOUNDER ONLY) ---
+@admin_bp.route("/api/admin/resolve-ticket/<ticket_id>", methods=["POST"])
+@role_required("founder")
+def resolve_ticket(ticket_id):
+    admin_id = get_jwt_identity()
+    data = request.json
+    resolution_note = data.get("resolution_note")
+
+    ticket = db.session.execute(text("""
+        SELECT * FROM tickets WHERE id=:id
+    """), {"id": ticket_id}).fetchone()
+
+    if not ticket:
+        return jsonify({"error": "Ticket not found"}), 404
+
+    # Refund logic based on category
+    if ticket.category == "agent_mistake":
+        refund_allowed = True
+    elif ticket.category == "platform_failure":
+        refund_allowed = True
+    else:
+        refund_allowed = False
+
+    try:
+        if refund_allowed:
+            # Mark payment refunded
+            db.session.execute(text("""
+                UPDATE payments 
+                SET status='refunded' 
+                WHERE application_id=:app
+            """), {"app": ticket.application_id})
+
+        db.session.execute(text("""
+            UPDATE tickets
+            SET resolution_note=:note,
+                resolved_by=:admin,
+                updated_at=NOW()
+            WHERE id=:id
+        """), {
+            "note": resolution_note,
+            "admin": admin_id,
+            "id": ticket_id
+        })
+
+        db.session.commit()
+        return jsonify({"message": "Ticket resolved", "refund": refund_allowed}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Resolution failed", "details": str(e)}), 500
