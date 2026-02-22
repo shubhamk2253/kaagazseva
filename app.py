@@ -23,7 +23,7 @@ def create_app():
     CORS(app)
 
     # ---------------- CONFIGURATION ----------------
-    # Fix for Heroku/Render/Railway: Postgres strings must start with postgresql://
+    # Unified Database: Fixed for Heroku/Render/Railway (Postgres vs PostgreSQL)
     db_url = os.getenv("DATABASE_URL", "sqlite:///database.db")
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
@@ -38,8 +38,6 @@ def create_app():
     JWTManager(app)
 
     # ---------------- REGISTER BLUEPRINTS ----------------
-    # Prefixes are defined here ONCE. 
-    # Ensure your route files do NOT repeat "/api/auth" in the @bp.route decorator.
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(agent_bp, url_prefix="/api/agent")
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
@@ -47,7 +45,6 @@ def create_app():
     app.register_blueprint(public_bp, url_prefix="/api")
 
     # ---------------- CORE SYSTEM ROUTES ----------------
-
     @app.route("/")
     def home():
         return {
@@ -59,14 +56,12 @@ def create_app():
     @app.route("/health")
     def health():
         try:
-            # Check DB connectivity
             db.session.execute(text("SELECT 1"))
             return {"status": "ok", "database": "connected"}, 200
         except Exception as e:
             return {"status": "error", "message": str(e)}, 500
 
     # ---------------- ERROR HANDLERS ----------------
-
     @app.errorhandler(404)
     def not_found(e):
         return jsonify({"error": "Endpoint not found"}), 404
@@ -78,17 +73,16 @@ def create_app():
     return app
 
 # ---------------- APPLICATION STARTUP ----------------
-
 app = create_app()
 
-# Unified database initialization
 with app.app_context():
-    # This creates all tables in the DATABASE_URL (Postgres or SQLite)
     db.create_all()
-    # If you have specific seeding logic in init_db, it runs here
     init_db()
 
 if __name__ == "__main__":
+    # Get port from environment
     port = int(os.getenv("PORT", 5000))
-    # Debug set to False for production safety, True for local dev
-    app.run(host="0.0.0.0", port=port, debug=os.getenv("DEBUG", "True") == "True")
+    # Check if we are in development mode
+    debug_mode = os.getenv("FLASK_ENV") == "development"
+    # Run app
+    app.run(host="0.0.0.0", port=port, debug=debug_mode)
