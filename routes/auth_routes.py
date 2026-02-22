@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from werkzeug.security import check_password_hash, generate_password_hash
 from sqlalchemy import text
@@ -6,11 +6,19 @@ from models import db
 from datetime import datetime, timedelta
 import random
 
+# Import Limiter for route-specific hardening
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
 auth_bp = Blueprint('auth_bp', __name__)
+
+# Initialize limiter for this blueprint
+limiter = Limiter(key_func=get_remote_address)
 
 # --- OTP SYSTEM ---
 
 @auth_bp.route("/api/send-otp", methods=["POST"])
+@limiter.limit("5 per minute")  # Max 5 OTP requests per minute per IP
 def send_otp():
     data = request.get_json()
     mobile = data.get("mobile")
@@ -62,6 +70,7 @@ def send_otp():
 
 
 @auth_bp.route("/api/verify-otp", methods=["POST"])
+@limiter.limit("10 per minute")  # Max 10 verification attempts per minute
 def verify_otp():
     data = request.get_json()
     mobile = data.get("mobile")
@@ -112,7 +121,6 @@ def verify_otp():
 # --- ADMIN/LEGACY PASSWORD LOGIN ---
 
 def authenticate_user(username, password, expected_role):
-    # Standardized to use SQLAlchemy text() for consistency
     user = db.session.execute(text("""
         SELECT id, password_hash, role FROM users WHERE email = :username
     """), {"username": username}).fetchone()
@@ -129,7 +137,6 @@ def authenticate_user(username, password, expected_role):
 @auth_bp.route('/api/auth/admin-login', methods=['POST'])
 def admin_login():
     data = request.get_json()
-    # Admins usually use email/username + password
     token = authenticate_user(data.get('username'), data.get('password'), 'founder')
     if not token:
         return jsonify(msg="Invalid Admin Credentials"), 401
@@ -149,6 +156,3 @@ def change_password():
     db.session.commit()
 
     return jsonify(success=True, message="Password updated successfully"), 200
-
-
-
