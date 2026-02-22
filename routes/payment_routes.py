@@ -3,6 +3,7 @@ import razorpay, os
 from database import get_db
 from services.assignment_service import auto_assign_agent
 from services.notification_service import notify_payment_success
+from utils.assignment import assign_best_agent
 
 payment_bp = Blueprint('payment_bp', __name__)
 
@@ -50,25 +51,35 @@ def verify():
             (data['application_id'], data['amount'], "Paid")
         )
 
-        conn.execute(
-            "UPDATE applications SET payment_status='Paid' WHERE application_id=?",
-            (data['application_id'],)
-        )
-
+        # Get application details needed for assignment
         row = conn.execute(
-            "SELECT mobile, pincode FROM applications WHERE application_id=?",
+            "SELECT mobile, pincode, state_id, service_name FROM applications WHERE application_id=?",
             (data['application_id'],)
         ).fetchone()
 
         mobile = row["mobile"]
         pincode = row["pincode"]
+        state_id = row["state_id"]
+        service_name = row["service_name"]
+
+        # Assign best agent based on state and service
+        agent_id = assign_best_agent(state_id, service_name)
+
+        # Update application with Payment status, Assigned Agent, and Processing Status
+        conn.execute(
+            """
+            UPDATE applications 
+            SET payment_status='Paid', 
+                agent_id = ?, 
+                status = 'processing' 
+            WHERE application_id=?
+            """,
+            (agent_id, data['application_id'])
+        )
 
         conn.commit()
-
-    # Assign agent
-    agent = auto_assign_agent(data['application_id'], pincode)
 
     # Notify customer
     notify_payment_success(mobile, data['application_id'], data['amount'])
 
-    return jsonify(success=True, agent=agent)
+    return jsonify(success=True, agent_id=agent_id)
