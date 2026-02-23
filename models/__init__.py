@@ -1,4 +1,5 @@
 from extensions import db
+
 from .user import User
 from .agent import Agent
 from .application import Application
