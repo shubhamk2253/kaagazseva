@@ -1,7 +1,6 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
-from flask_migrate import Migrate
 import os
 from sqlalchemy import text
 from flask_limiter import Limiter
@@ -46,7 +45,6 @@ def create_app():
     # ---------------- EXTENSIONS ----------------
     db.init_app(app)
     JWTManager(app)
-    Migrate(app, db)
 
     # ---------------- BLUEPRINTS ----------------
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
@@ -76,6 +74,10 @@ def create_app():
 
 
 app = create_app()
+
+# 🚀 FIRST DEPLOY ONLY – AUTO CREATE TABLES
+with app.app_context():
+    db.create_all()
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
