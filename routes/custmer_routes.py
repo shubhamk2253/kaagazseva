@@ -4,7 +4,6 @@ from models import db
 from sqlalchemy import text
 from flask_jwt_extended import get_jwt_identity
 from utils.security import role_required
-from datetime import datetime
 from utils.s3_service import upload_file
 
 customer_bp = Blueprint("customer_bp", __name__)
@@ -25,10 +24,13 @@ def apply_service():
         service = request.form.get("service")
         pincode = request.form.get("pincode")
 
+        if not all([name, mobile, service, pincode]):
+            return jsonify({"error": "All fields are required"}), 400
+
         file = request.files.get("document")
         file_key = None
 
-        # Upload to S3 if file exists
+        # Upload file to S3
         if file:
             file_key = f"{app_id}_{file.filename}"
             upload_file(file, file_key)
@@ -96,20 +98,24 @@ def get_customer_applications():
         apps = db.session.execute(text("""
             SELECT a.application_id,
                    a.status,
-                   p.status AS payment_status,
+                   COALESCE(p.status, 'Pending') AS payment_status,
                    a.created_at
             FROM applications a
-            LEFT JOIN payments p ON p.application_id = a.application_id
+            LEFT JOIN payments p 
+                ON p.application_id = a.application_id
             WHERE a.user_id = :user
             ORDER BY a.created_at DESC
         """), {"user": user_id}).fetchall()
 
-        return jsonify([{
-            "application_id": a.application_id,
-            "status": a.status,
-            "payment_status": a.payment_status,
-            "created_at": a.created_at.isoformat() if a.created_at else None
-        } for a in apps]), 200
+        return jsonify([
+            {
+                "application_id": a.application_id,
+                "status": a.status,
+                "payment_status": a.payment_status,
+                "created_at": a.created_at.isoformat() if a.created_at else None
+            }
+            for a in apps
+        ]), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -123,6 +129,15 @@ def get_customer_applications():
 def raise_ticket():
     user_id = get_jwt_identity()
     data = request.get_json()
+
+    if not data:
+        return jsonify({"error": "Invalid request body"}), 400
+
+    required_fields = ["application_id", "category", "description"]
+
+    for field in required_fields:
+        if field not in data:
+            return jsonify({"error": f"{field} is required"}), 400
 
     try:
         db.session.execute(text("""
@@ -157,7 +172,9 @@ def raise_ticket():
 
         db.session.commit()
 
-        return jsonify({"message": "Ticket submitted successfully"}), 201
+        return jsonify({
+            "message": "Ticket submitted successfully"
+        }), 201
 
     except Exception as e:
         db.session.rollback()
@@ -185,14 +202,17 @@ def get_my_tickets():
             ORDER BY created_at DESC
         """), {"user": user_id}).fetchall()
 
-        return jsonify([{
-            "id": str(t.id),
-            "application_id": t.application_id,
-            "category": t.category,
-            "status": t.status,
-            "priority": t.priority,
-            "created_at": t.created_at.isoformat() if t.created_at else None
-        } for t in tickets]), 200
+        return jsonify([
+            {
+                "id": str(t.id),
+                "application_id": t.application_id,
+                "category": t.category,
+                "status": t.status,
+                "priority": t.priority,
+                "created_at": t.created_at.isoformat() if t.created_at else None
+            }
+            for t in tickets
+        ]), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
