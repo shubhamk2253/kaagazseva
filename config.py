@@ -1,39 +1,21 @@
-# backend/config.py
-
 import os
-from dotenv import load_dotenv
 from datetime import timedelta
 
-import os
+class Config:
+    # 1. Database (Supabase)
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL")
-SQLALCHEMY_TRACK_MODIFICATIONS = False
-# Load environment variables from .env
-load_dotenv()
+    # 2. Security (JWT)
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'super-secret-key')
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(days=1)
 
-# ---------------- FLASK CORE ----------------
-FLASK_SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "kaagazseva-dev-secret")
+    # 3. AWS S3 (File Uploads)
+    AWS_ACCESS_KEY = os.environ.get('AWS_ACCESS_KEY')
+    AWS_SECRET_KEY = os.environ.get('AWS_SECRET_KEY')
+    AWS_BUCKET_NAME = os.environ.get('AWS_BUCKET_NAME')
+    AWS_REGION = os.environ.get('AWS_REGION', 'ap-south-1')
 
-# ---------------- JWT CONFIG ----------------
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "ks-jwt-secret-2026")
-JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)
-
-# ---------------- FILE UPLOAD ----------------
-UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", "uploads")
-MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB
-
-# ---------------- RAZORPAY ----------------
-RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
-RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
-
-# ---------------- PLATFORM SETTINGS ----------------
-AGENT_COMMISSION_PERCENT = float(os.getenv("AGENT_COMMISSION_PERCENT", "0.70"))
-MAX_AGENT_LOAD = int(os.getenv("MAX_AGENT_LOAD", "20"))
-
-# ---------------- RATE LIMIT DEFAULTS ----------------
-DEFAULT_RATE_LIMIT_DAY = "200 per day"
-DEFAULT_RATE_LIMIT_HOUR = "50 per hour"
-
-# ---------------- ADMIN SECURITY ----------------
-ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "super-secret-admin-key")
-
+    # 4. Payment (Razorpay)
+    RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID')
+    RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET')
