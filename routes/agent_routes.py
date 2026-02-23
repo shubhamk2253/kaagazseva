@@ -3,7 +3,6 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from werkzeug.utils import secure_filename
 from sqlalchemy import text
 from models import db
-from datetime import datetime
 import os
 import uuid
 
@@ -21,11 +20,31 @@ os.makedirs(UPLOADS_DONE, exist_ok=True)
 def agent_register():
     data = request.json
 
+    required_fields = [
+        "full_name",
+        "mobile",
+        "email",
+        "state_id",
+        "district_id",
+        "address",
+        "pincode"
+    ]
+
+    for field in required_fields:
+        if field not in data:
+            return jsonify({"error": f"{field} is required"}), 400
+
     try:
         db.session.execute(text("""
             INSERT INTO agent_registrations
-            (id, full_name, mobile, email, state_id, district_id, address, status, created_at)
-            VALUES (:id, :name, :mobile, :email, :state, :district, :address, 'pending', NOW())
+            (id, full_name, mobile, email,
+             state_id, district_id, address,
+             pincode, status, created_at)
+            VALUES (
+                :id, :name, :mobile, :email,
+                :state, :district, :address,
+                :pincode, 'pending', NOW()
+            )
         """), {
             "id": str(uuid.uuid4()),
             "name": data["full_name"],
@@ -33,7 +52,8 @@ def agent_register():
             "email": data["email"],
             "state": data["state_id"],
             "district": data["district_id"],
-            "address": data["address"]
+            "address": data["address"],
+            "pincode": data["pincode"]
         })
 
         db.session.commit()
@@ -79,7 +99,9 @@ def workload():
         AND status != 'Completed'
     """), {"agent": agent_id}).fetchone()
 
-    return jsonify({"pending_tasks": res.pending if res else 0})
+    return jsonify({
+        "pending_tasks": res.pending if res else 0
+    })
 
 
 # =========================================================
@@ -132,7 +154,7 @@ def complete_application(application_id):
 
     agent_id = get_jwt_identity()
 
-    # Verify application ownership
+    # Verify ownership
     application = db.session.execute(text("""
         SELECT id, state_service_id
         FROM applications
@@ -145,9 +167,11 @@ def complete_application(application_id):
     }).fetchone()
 
     if not application:
-        return jsonify({"error": "Application not found or already completed"}), 403
+        return jsonify({
+            "error": "Application not found or already completed"
+        }), 403
 
-    # Handle file upload
+    # Optional file upload
     file = request.files.get("document")
     if file:
         filename = secure_filename(file.filename)
@@ -157,7 +181,7 @@ def complete_application(application_id):
         )
         file.save(file_path)
 
-    # Get pricing configuration
+    # Fetch pricing
     service = db.session.execute(text("""
         SELECT service_fee
         FROM state_services
@@ -169,16 +193,22 @@ def complete_application(application_id):
 
     service_charge = float(service.service_fee)
 
-    # Commission Logic (25% OR minimum 30)
+    # Commission Logic
     commission = max(service_charge * 0.25, 30.0)
     payout = service_charge - commission
 
     try:
-        # Save earnings record
+        # Save earnings
         db.session.execute(text("""
             INSERT INTO agent_earnings
-            (agent_id, application_id, service_charge, platform_commission, agent_payout, created_at)
-            VALUES (:agent, :app, :service_charge, :commission, :payout, NOW())
+            (agent_id, application_id,
+             service_charge, platform_commission,
+             agent_payout, created_at)
+            VALUES (
+                :agent, :app,
+                :service_charge, :commission,
+                :payout, NOW()
+            )
         """), {
             "agent": agent_id,
             "app": application_id,
@@ -190,15 +220,19 @@ def complete_application(application_id):
         # Wallet transaction log
         db.session.execute(text("""
             INSERT INTO wallet_transactions
-            (agent_id, application_id, amount, tx_type, created_at)
-            VALUES (:agent, :app, :amount, 'credit', NOW())
+            (agent_id, application_id,
+             amount, tx_type, created_at)
+            VALUES (
+                :agent, :app,
+                :amount, 'credit', NOW()
+            )
         """), {
             "agent": agent_id,
             "app": application_id,
             "amount": payout
         })
 
-        # Update wallet (Postgres safe UPSERT)
+        # Safe UPSERT wallet
         db.session.execute(text("""
             INSERT INTO agent_wallets (agent_id, balance)
             VALUES (:agent, :amount)
