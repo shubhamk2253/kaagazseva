@@ -1,6 +1,7 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
+from flask_migrate import Migrate
 import os
 from sqlalchemy import text
 from flask_limiter import Limiter
@@ -8,7 +9,6 @@ from flask_limiter.util import get_remote_address
 
 # Core internal modules
 from config import JWT_SECRET_KEY
-from database import init_db
 from models import db
 
 # Route blueprints
@@ -18,22 +18,24 @@ from routes.admin_routes import admin_bp
 from routes.payment_routes import payment_bp
 from routes.public_routes import public_bp
 
+
 def create_app():
     app = Flask(__name__)
-    
-    # Initialize Limiter for security (Rate limiting)
+
+    # ---------------- SECURITY: RATE LIMITING ----------------
     limiter = Limiter(
         get_remote_address,
         app=app,
         default_limits=["200 per day", "50 per hour"]
     )
-    
+
     # Enable CORS
     CORS(app)
 
     # ---------------- CONFIGURATION ----------------
-    # Unified Database: Fixed for Heroku/Render/Railway (Postgres vs PostgreSQL)
     db_url = os.getenv("DATABASE_URL", "sqlite:///database.db")
+
+    # Fix postgres:// issue (Render/Railway)
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
 
@@ -42,9 +44,10 @@ def create_app():
     app.config["JWT_SECRET_KEY"] = JWT_SECRET_KEY
     app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
-    # Initialize extensions
+    # ---------------- EXTENSIONS ----------------
     db.init_app(app)
     JWTManager(app)
+    Migrate(app, db)   # ✅ Production migration system
 
     # ---------------- REGISTER BLUEPRINTS ----------------
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
@@ -53,13 +56,13 @@ def create_app():
     app.register_blueprint(payment_bp, url_prefix="/api/payment")
     app.register_blueprint(public_bp, url_prefix="/api")
 
-    # ---------------- CORE SYSTEM ROUTES ----------------
+    # ---------------- CORE ROUTES ----------------
     @app.route("/")
     def home():
         return {
             "status": "success",
             "message": "KaagazSeva Backend is Live 🚀",
-            "version": "1.0.1"
+            "version": "2.0.0"
         }
 
     @app.route("/health")
@@ -81,17 +84,11 @@ def create_app():
 
     return app
 
-# ---------------- APPLICATION STARTUP ----------------
+
 app = create_app()
 
-with app.app_context():
-    db.create_all()
-    init_db()
 
 if __name__ == "__main__":
-    # Get port from environment
     port = int(os.getenv("PORT", 5000))
-    # Check if we are in development mode
     debug_mode = os.getenv("FLASK_ENV") == "development"
-    # Run app
     app.run(host="0.0.0.0", port=port, debug=debug_mode)
